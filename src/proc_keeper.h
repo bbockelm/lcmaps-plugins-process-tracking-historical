@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-int try_finalize();
+int is_done();
 void finalize();
 int initialize(pid_t);
 int processFork(pid_t, pid_t);

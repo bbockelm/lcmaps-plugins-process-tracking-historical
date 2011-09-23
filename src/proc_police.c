@@ -22,9 +22,6 @@
 #include "lcmaps/lcmaps_log.h"
 #include "proc_keeper.h"
 
-static uint64_t last_proc_event = 0;
-static uint32_t last_cpu = 0;
-
 int create_filter(int sock) {
     struct sock_filter filter[] = {
         BPF_STMT (BPF_LD|BPF_H|BPF_ABS,  // Accept packet if msg type != NLMSG_DONE
@@ -93,7 +90,7 @@ int create_filter(int sock) {
     fprog.len = sizeof filter / sizeof filter[0];
 
     if (setsockopt (sock, SOL_SOCKET, SO_ATTACH_FILTER, &fprog, sizeof fprog) < 0) {
-        fprintf(stderr, "Unable to attach filter program: %s\n", strerror(errno));
+        lcmaps_log(0, "Unable to attach filter program: %d %s\n", errno, strerror(errno));
         return -errno;
     }
     return 0;
@@ -108,18 +105,18 @@ int create_socket() {
     int sock;
     sock = socket (PF_NETLINK, SOCK_DGRAM, NETLINK_CONNECTOR);
     if (sock == -1) {
-        fprintf(stderr, "Unable to create a netlink socket: %s\n", strerror(errno));
+        lcmaps_log(0, "Unable to create a netlink socket: %d %s\n", errno, strerror(errno));
         return -errno;
     }
 
-    // Set O_CLOEXEC and O_NONBLOCK
+    // Set O_CLOEXEC
     int flags;
     if ((flags = fcntl(sock, F_GETFL, 0)) < 0)  {
-        fprintf(stderr, "Unable to get socket flags: %s\n", strerror(errno));
+        lcmaps_log(0, "Unable to get socket flags: %d %s\n", errno, strerror(errno));
         return -errno;
     }
     if (fcntl(sock, F_SETFL, flags | FD_CLOEXEC)< 0) {
-        fprintf(stderr, "Unable to manipulate socket flags: %s\n", strerror(errno));
+        lcmaps_log(0, "Unable to manipulate socket flags: %d %s\n", errno, strerror(errno));
         return -errno;
     }
 
@@ -130,7 +127,7 @@ int create_socket() {
 
     int result = bind (sock, (struct sockaddr *)&addr, sizeof addr);
     if (result == -1) {
-        fprintf(stderr, "Unable to bind netlink socket to kernel: %s\n", strerror(errno));
+        lcmaps_log(0, "Unable to bind netlink socket to kernel: %d %s\n", errno, strerror(errno));
         return -errno;
     }
 
@@ -171,10 +168,10 @@ int inform_kernel(int sock, enum proc_cn_mcast_op op) {
     size_t full_size = iov[0].iov_len + iov[1].iov_len + iov[2].iov_len;
     if (writev (sock, iov, 3) != full_size) {
         if (errno) {
-            fprintf(stderr, "Unable to subscribe to proc stream: %s\n", strerror(errno));
+            lcmaps_log(0, "Unable to subscribe to proc stream: %d %s\n", errno, strerror(errno));
             return -errno;
         }
-        fprintf(stderr, "Unable to write full subscription to kernel.");
+        lcmaps_log(0, "Unable to write full subscription to kernel.");
         return -1;
     }
 
@@ -202,7 +199,7 @@ int message_loop(int sock) {
 
     struct nlmsghdr *nlmsghdr;
 
-    while (1) {
+    while (!is_done()) {
 
         len = recvmsg (sock, &msghdr, 0);
 
@@ -237,23 +234,20 @@ int message_loop(int sock) {
 
             struct proc_event *ev = (struct proc_event *)cn_msg->data;
 
-            if ((ev->timestamp_ns == last_proc_event) &&  (ev->cpu == last_cpu)) {
-                continue;
-            }
-            last_proc_event = ev->timestamp_ns;
-            last_cpu = ev->cpu;
-
             switch (ev->what) {
 
                 case PROC_EVENT_FORK:
-                    processFork(ev->event_data.fork.parent_tgid, ev->event_data.fork.child_tgid);
+                    if (ev->event_data.fork.child_tgid == ev->event_data.fork.child_pid) {
+                        //lcmaps_log(3, "FORK: %d -> %d\n", ev->event_data.fork.parent_tgid, ev->event_data.fork.child_tgid);
+                        processFork(ev->event_data.fork.parent_tgid, ev->event_data.fork.child_tgid);
+                    }
                     break;
                 case PROC_EVENT_EXIT:
-                    processExit(ev->event_data.exit.process_tgid);
+                    if (ev->event_data.exit.process_tgid == ev->event_data.exit.process_pid) {
+                        //lcmaps_log(3, "EXIT: %d\n", ev->event_data.exit.process_tgid);
+                        processExit(ev->event_data.exit.process_tgid);
+                    }
                     break;
-                default:
-                    lcmaps_log(1, "Unknown message: %d\n", ev->what);
-                    return -1;
             }
         }
     }

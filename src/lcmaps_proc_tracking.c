@@ -78,12 +78,14 @@ int proc_police_main(pid_t pid) {
         lcmaps_log(0, "%s: Unable to create socket.\n", logstr);
         goto cleanup;
     }
+    lcmaps_log(3, "%s: Created netlink socket (%d) for kernel communication.\n", logstr, sock);
 
     // Create the filter for the socket
     if ((result = create_filter(sock)) < 0) {
         lcmaps_log(0, "%s: Unable to create filter.\n", logstr);
         goto cleanup;
     }
+    lcmaps_log(3, "%s: Created netlink byte packet filter.\n", logstr);
 
     // Subscribe our socket to the kernel feed.
     if ((result = inform_kernel(sock, PROC_CN_MCAST_LISTEN)) < 0) {
@@ -91,19 +93,15 @@ int proc_police_main(pid_t pid) {
         goto cleanup;
     }
 
-    lcmaps_log(2, "%s: TRACKING %s\n", logstr, pid);
+    lcmaps_log(2, "%s: TRACKING %d\n", logstr, pid);
+    write(1, "0", 1);
+    close(1);
+    open("/dev/null", O_WRONLY);
+    close(0);
+    open("/dev/null", O_RDONLY);
 
     // Primary message loop
     message_loop(sock);
-
-    // Finalize
-    int ctr = 0;
-    while (try_finalize()) {
-        ctr ++;
-        if (ctr == 5) {
-            lcmaps_log(0, "%s: FORK BOMB ATTACK FROM PID %d", pid);
-        }
-    }
 
     // Shutdown
     if ((result = inform_kernel(sock, PROC_CN_MCAST_IGNORE)) < 0) {
@@ -116,6 +114,7 @@ cleanup:
     if (sock >= 0) {
         close(sock);
     }
+    lcmaps_log(0, "%s: Process %d (monitoring process %d) finished with code %d.\n", logstr, getpid(), pid, result);
     return result;
 }
 
@@ -134,6 +133,7 @@ void handle_child(int p2c[], int c2p[], pid_t pid)
       exit(errno);
     }
     close(p2c[0]);
+    close(p2c[1]);
     close(c2p[1]);
 
     //  Setting the real and effective uid/gid to root.
@@ -265,7 +265,7 @@ int plugin_run(int argc, lcmaps_argument_t *argv)
     fclose(fh);
   }
 
-  if (rc != 0) {
+  if (rc < 0) {
      lcmaps_log (0, "Error: failure reading from the monitor process. %d.\n", rc);
      goto glexec_child_failure;
   }

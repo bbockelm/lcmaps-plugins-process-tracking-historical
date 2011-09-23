@@ -30,22 +30,33 @@ class ProcessTree {
 
 public:
     ProcessTree(pid_t watched) : 
-        m_watched(watched)
+        m_watched(watched),
+        m_live_procs(1),
+        m_started_shooting(false)
     {}
     int fork(pid_t, pid_t);
     int exit(pid_t);
     int shoot_tree();
+    inline int is_done();
+    inline pid_t get_pid() {return m_watched;}
 
 private:
     PidSet m_ignored_pids;
     PidListMap m_pid_map;
     PidPidMap m_pid_reverse;
-    int m_watched;
+    pid_t m_watched;
+    unsigned int m_live_procs;
+    bool m_started_shooting;
     inline int record_new(pid_t, pid_t);
 };
 
+inline int ProcessTree::is_done() {
+    return !m_live_procs;
+}
+
 inline int ProcessTree::record_new(pid_t parent_pid, pid_t child_pid) {
     lcmaps_log(3, "FORK %d -> %d\n", parent_pid, child_pid);
+    m_live_procs++;
     PidList pl;
     pl.push_back(child_pid);
     m_pid_map[parent_pid] = pl;
@@ -58,19 +69,31 @@ int ProcessTree::fork(pid_t parent_pid, pid_t child_pid) {
     PidPidMap::const_iterator it2;
     if (m_ignored_pids.find(parent_pid) != m_ignored_pids.end()) {
         return 0;
-    } else if ((it = m_pid_map.find(parent_pid)) != m_pid_map.end()) {
+    } else if ((parent_pid != 1) && (it = m_pid_map.find(parent_pid)) != m_pid_map.end()) {
         lcmaps_log(3, "FORK %d -> %d\n", parent_pid, child_pid);
+        m_live_procs++;
         (it->second).push_back(child_pid);
         m_pid_reverse[child_pid] = parent_pid;
+        if (m_started_shooting) {
+            shoot_tree();
+        }
     } else if ((it2 = m_pid_reverse.find(parent_pid)) != m_pid_reverse.end()) {
         record_new(parent_pid, child_pid);
+        if (m_started_shooting) {
+            shoot_tree();
+        }
     }else if (parent_pid == m_watched) {
         record_new(parent_pid, child_pid);
+    }else {
+        m_ignored_pids.insert(parent_pid);
+        m_ignored_pids.insert(child_pid);
     }
     return 0;
 }
 
 int ProcessTree::shoot_tree() {
+    m_started_shooting = true;
+
     // Kill it all.
     PidListMap::const_iterator it;
     PidList::const_iterator it2, it3;
@@ -87,12 +110,20 @@ int ProcessTree::shoot_tree() {
              body_count ++;
         }
     }
+    if (body_count)
+        lcmaps_log(2, "Cleaned all processes associated with %d\n", m_watched);
     return body_count;
 }
 
 int ProcessTree::exit(pid_t pid) {
     PidListMap::iterator it;
     PidPidMap::iterator it2;
+    // The head process has died.  Start shooting
+    if (pid == m_watched) {
+        shoot_tree();
+        lcmaps_log(2, "EXIT %d (main process)\n", pid);
+        m_live_procs--;
+    }
     if (m_ignored_pids.find(pid) != m_ignored_pids.end()) {
         m_ignored_pids.erase(pid);
         return 0;
@@ -112,12 +143,13 @@ int ProcessTree::exit(pid_t pid) {
              }
         }
         m_pid_map.erase(pid);
+        m_live_procs--;
     }
     if ((it2 = m_pid_reverse.find(pid)) == m_pid_reverse.end()) {
         if (in_pid_map) {
             lcmaps_log(3, "EXIT %d\n");
+            m_live_procs--;
         }
-        return 0;
     } else {
         pid_t parent = it2->second;
         lcmaps_log(3, "EXIT %d PARENT %d\n", pid, parent);
@@ -125,10 +157,7 @@ int ProcessTree::exit(pid_t pid) {
             (it->second).remove(pid);
         }
         m_pid_reverse.erase(pid);
-    }
-    // The head process has died.  Start shooting
-    if (pid == m_watched) {
-        shoot_tree();
+        m_live_procs--;
     }
     return 0;
 }
@@ -140,16 +169,19 @@ int initialize(pid_t watch) {
     return 0;
 }
 
-int try_finalize() {
+int is_done() {
     if (gTree)
-        return gTree->shoot_tree();
-    else
-        return 0;
+        return gTree->is_done();
+    return 1;
 }
 
 void finalize() {
-    if (gTree)
+    if (gTree) {
+        if (!is_done()) {
+            lcmaps_log(0, "ERROR: Finalizing without finishing killing the pid %d tree.\n", gTree->get_pid());
+        }
         delete gTree;
+    }
     gTree = NULL;
 }
 
