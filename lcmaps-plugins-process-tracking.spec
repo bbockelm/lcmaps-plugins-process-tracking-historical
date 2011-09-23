@@ -1,7 +1,7 @@
 Summary: Process tracking plugin for the LCMAPS authorization framework
 Name: lcmaps-plugins-process-tracking
 Version: 0.0.4
-Release: 0%{?dist}
+Release: 1%{?dist}
 License: Public Domain
 Group: System Environment/Libraries
 # The tarball was created from Subversion using the following commands:
@@ -35,7 +35,8 @@ make DESTDIR=$RPM_BUILD_ROOT install
 mv $RPM_BUILD_ROOT/%{_libdir}/lcmaps $RPM_BUILD_ROOT/%{_libdir}/modules
 ln -s liblcmaps_process_tracking.so $RPM_BUILD_ROOT/%{_libdir}/modules/liblcmaps_process_tracking.so.0
 ln -s liblcmaps_process_tracking.so.0 $RPM_BUILD_ROOT/%{_libdir}/modules/liblcmaps_process_tracking.so.0.0.0
-find $RPM_BUILD_ROOT -name '*.la' -exec rm -f {} ';'
+rm $RPM_BUILD_ROOT/%{_libdir}/modules/liblcmaps_process_tracking.la
+rm $RPM_BUILD_ROOT/%{_libdir}/modules/liblcmaps_process_tracking.a
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -48,3 +49,6 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/modules/liblcmaps_process_tracking.so.0.0.0
 
 %changelog
+* Fri Sep 23 2011 Brian Bockelman <bbockelm@cse.unl.edu> - 0.0.4-1
+- Initial build of the process tracking plugin.
+

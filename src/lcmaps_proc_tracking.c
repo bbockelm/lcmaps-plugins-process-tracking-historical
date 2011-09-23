@@ -10,11 +10,11 @@
 ******************************************************************************/
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <string.h>
+#include <sys/stat.h>
 
 #include "lcmaps/lcmaps_modules.h"
 #include "lcmaps/lcmaps_cred_data.h"
@@ -91,7 +91,7 @@ int proc_police_main(pid_t pid) {
         goto cleanup;
     }
 
-    lcmaps(2, "%s: TRACKING %s\n", logstr, pid);
+    lcmaps_log(2, "%s: TRACKING %s\n", logstr, pid);
 
     // Primary message loop
     message_loop(sock);
@@ -215,12 +215,7 @@ Returns:
     LCMAPS_MOD_SUCCESS: authorization succeeded
     LCMAPS_MOD_FAIL   : authorization failed
 ******************************************************************************/
-int plugin_verify(int argc, lcmaps_argument_t * argv)
-{
-    return plugin_run(argc, argv);
-}
-
-int plugin_run(int argc, lcmaps_argument_t *argv, int lcmaps_mode)
+int plugin_run(int argc, lcmaps_argument_t *argv)
 {
   FILE *fh = NULL;
   int p2c[2], c2p[2];
@@ -228,11 +223,10 @@ int plugin_run(int argc, lcmaps_argument_t *argv, int lcmaps_mode)
   int uid_count;
   uid_t uid;
   pid_t pid, my_pid;
-  int ngroups;
 
   uid_count = 0;
   uid_t * uid_array;
-  uid_array = (int *)getCredentialData(UID, &uid_count);
+  uid_array = (uid_t *)getCredentialData(UID, &uid_count);
   if (uid_count != 1) {
     lcmaps_log(0, "%s: No UID set yet; must map to a UID before running the glexec_tracking module.\n", logstr);
     goto glexec_uid_failure;
@@ -298,6 +292,10 @@ glexec_child_failure:
   return LCMAPS_MOD_FAIL;
 }
 
+int plugin_verify(int argc, lcmaps_argument_t * argv)
+{
+    return plugin_run(argc, argv);
+}
 
 /******************************************************************************
 Function:   plugin_terminate

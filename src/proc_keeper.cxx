@@ -8,7 +8,9 @@
 #include <stdarg.h>
 #include <errno.h>
 
-#include "lcmaps/lcmaps_modules.h"
+extern "C" {
+#include "lcmaps/lcmaps_log.h"
+}
 #include "proc_keeper.h"
 
 #pragma GCC visibility push(hidden)

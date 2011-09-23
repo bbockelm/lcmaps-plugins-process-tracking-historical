@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+#include "lcmaps/lcmaps_log.h"
 #include "proc_keeper.h"
 
 static uint64_t last_proc_event = 0;

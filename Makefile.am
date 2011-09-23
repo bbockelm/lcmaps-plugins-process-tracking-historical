@@ -16,7 +16,8 @@ plugin_LTLIBRARIES = \
 liblcmaps_process_tracking_la_SOURCES = \
 	src/lcmaps_proc_tracking.c \
 	src/proc_keeper.cxx \
-	src/proc_police.c
+	src/proc_keeper.h \
+	src/proc_police.c \
 	src/proc_police.h
 
 liblcmaps_process_tracking_la_LDFLAGS = -avoid-version
