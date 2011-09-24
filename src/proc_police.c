@@ -131,6 +131,12 @@ int create_socket() {
         return -errno;
     }
 
+    unsigned int socket_size = 512*1024;
+    if (setsockopt (sock, SOL_SOCKET, SO_RCVBUF, &socket_size, sizeof(int))) {
+        lcmaps_log(0, "Unable to increase socket buffer size: %d %s\n", errno, strerror(errno));
+        return -errno;
+    }
+
     return sock;
 }
 
@@ -199,13 +205,17 @@ int message_loop(int sock) {
 
     struct nlmsghdr *nlmsghdr;
 
-    while (!is_done()) {
+    while (1) {
 
-        len = recvmsg (sock, &msghdr, 0);
+        // If we think we are done, clear out the queued messages, then exit.
+        len = recvmsg (sock, &msghdr, is_done() ? MSG_DONTWAIT : 0);
 
         if (len == -1) {
             if (errno == ENOBUFS) {
                 lcmaps_log(0, "OVERFLOW (socket buffer overflow; likely fork bomb attack)");
+            } else if (EAGAIN || EWOULDBLOCK) {
+                // is_done was true, and we don't have any messages in the queue.
+                break;
             } else {
                 lcmaps_log(1, "Recovering from recvmsg error: %s\n", strerror(errno));
             }
@@ -238,18 +248,19 @@ int message_loop(int sock) {
 
                 case PROC_EVENT_FORK:
                     if (ev->event_data.fork.child_tgid == ev->event_data.fork.child_pid) {
-                        //lcmaps_log(3, "FORK: %d -> %d\n", ev->event_data.fork.parent_tgid, ev->event_data.fork.child_tgid);
+                        //lcmaps_log(3, "DFORK: %d -> %d\n", ev->event_data.fork.parent_tgid, ev->event_data.fork.child_tgid);
                         processFork(ev->event_data.fork.parent_tgid, ev->event_data.fork.child_tgid);
                     }
                     break;
                 case PROC_EVENT_EXIT:
                     if (ev->event_data.exit.process_tgid == ev->event_data.exit.process_pid) {
-                        //lcmaps_log(3, "EXIT: %d\n", ev->event_data.exit.process_tgid);
+                        //lcmaps_log(3, "DEXIT: %d\n", ev->event_data.exit.process_tgid);
                         processExit(ev->event_data.exit.process_tgid);
                     }
                     break;
             }
         }
+
     }
 
     return 0;

@@ -55,7 +55,7 @@ inline int ProcessTree::is_done() {
 }
 
 inline int ProcessTree::record_new(pid_t parent_pid, pid_t child_pid) {
-    lcmaps_log(3, "FORK %d -> %d\n", parent_pid, child_pid);
+    lcmaps_log_debug(3, "FORK %d -> %d\n", parent_pid, child_pid);
     m_live_procs++;
     PidList pl;
     pl.push_back(child_pid);
@@ -70,7 +70,7 @@ int ProcessTree::fork(pid_t parent_pid, pid_t child_pid) {
     if (m_ignored_pids.find(parent_pid) != m_ignored_pids.end()) {
         return 0;
     } else if ((parent_pid != 1) && (it = m_pid_map.find(parent_pid)) != m_pid_map.end()) {
-        lcmaps_log(3, "FORK %d -> %d\n", parent_pid, child_pid);
+        lcmaps_log_debug(3, "FORK %d -> %d\n", parent_pid, child_pid);
         m_live_procs++;
         (it->second).push_back(child_pid);
         m_pid_reverse[child_pid] = parent_pid;
@@ -95,20 +95,16 @@ int ProcessTree::shoot_tree() {
     m_started_shooting = true;
 
     // Kill it all.
-    PidListMap::const_iterator it;
-    PidList::const_iterator it2, it3;
+    PidPidMap::const_iterator it;
     // Check to see if there's children of this process.
     int body_count = 0;
-    for (it = m_pid_map.begin(); it != m_pid_map.end(); ++it) {
-        it3 = it->second.end();
-        for (it2 = it->second.begin(); it2 != it3; ++it2) {
-             if (*it2 == 1)
-                 continue;
-             if ((kill(*it2, SIGKILL) == -1) && (errno != ESRCH)) {
-                 lcmaps_log(0, "FAILURE TO KILL %d: %d %s\n", *it2, errno, strerror(errno));
-             }
-             body_count ++;
+    for (it = m_pid_reverse.begin(); it != m_pid_reverse.end(); ++it) {
+        if (it->first == 1)
+            continue;
+        if ((kill(it->first, SIGKILL) == -1) && (errno != ESRCH)) {
+                 lcmaps_log(0, "FAILURE TO KILL %d: %d %s\n", it->first, errno, strerror(errno));
         }
+             body_count ++;
     }
     if (body_count)
         lcmaps_log(2, "Cleaned all processes associated with %d\n", m_watched);
@@ -121,7 +117,7 @@ int ProcessTree::exit(pid_t pid) {
     // The head process has died.  Start shooting
     if (pid == m_watched) {
         shoot_tree();
-        lcmaps_log(2, "EXIT %d (main process)\n", pid);
+        lcmaps_log_debug(2, "EXIT %d (main process)\n", pid);
         m_live_procs--;
     }
     if (m_ignored_pids.find(pid) != m_ignored_pids.end()) {
@@ -138,26 +134,27 @@ int ProcessTree::exit(pid_t pid) {
              // Re-parent the process to init.
              const pid_t child_pid = *it3;
              if ((it2 = m_pid_reverse.find(child_pid)) != m_pid_reverse.end()) {
-                 lcmaps_log(1, "DAEMON %d\n", child_pid);
+                 lcmaps_log_debug(2, "DAEMON %d\n", child_pid);
                  it2->second = 1;
              }
         }
         m_pid_map.erase(pid);
-        m_live_procs--;
     }
     if ((it2 = m_pid_reverse.find(pid)) == m_pid_reverse.end()) {
         if (in_pid_map) {
-            lcmaps_log(3, "EXIT %d\n");
-            m_live_procs--;
+            lcmaps_log_debug(3, "EXIT %d\n", pid);
+            if (pid != m_watched)
+                m_live_procs--;
         }
     } else {
         pid_t parent = it2->second;
-        lcmaps_log(3, "EXIT %d PARENT %d\n", pid, parent);
+        lcmaps_log_debug(3, "EXIT %d PARENT %d\n", pid, parent);
         if ((it = m_pid_map.find(parent)) != m_pid_map.end()) {
             (it->second).remove(pid);
         }
         m_pid_reverse.erase(pid);
-        m_live_procs--;
+        if (pid != m_watched)
+            m_live_procs--;
     }
     return 0;
 }
