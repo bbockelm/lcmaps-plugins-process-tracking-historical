@@ -78,14 +78,14 @@ int proc_police_main(pid_t pid) {
         lcmaps_log(0, "%s: Unable to create socket.\n", logstr);
         goto cleanup;
     }
-    lcmaps_log(3, "%s: Created netlink socket (%d) for kernel communication.\n", logstr, sock);
+    lcmaps_log_debug(3, "%s: Created netlink socket (%d) for kernel communication.\n", logstr, sock);
 
     // Create the filter for the socket
     if ((result = create_filter(sock)) < 0) {
         lcmaps_log(0, "%s: Unable to create filter.\n", logstr);
         goto cleanup;
     }
-    lcmaps_log(3, "%s: Created netlink byte packet filter.\n", logstr);
+    lcmaps_log_debug(3, "%s: Created netlink byte packet filter.\n", logstr);
 
     // Subscribe our socket to the kernel feed.
     if ((result = inform_kernel(sock, PROC_CN_MCAST_LISTEN)) < 0) {
@@ -93,7 +93,7 @@ int proc_police_main(pid_t pid) {
         goto cleanup;
     }
 
-    lcmaps_log(2, "%s: TRACKING %d\n", logstr, pid);
+    lcmaps_log_debug(2, "%s: TRACKING %d\n", logstr, pid);
     write(1, "0", 1);
     close(1);
     open("/dev/null", O_WRONLY);
@@ -184,18 +184,12 @@ Returns:
 ******************************************************************************/
 int plugin_introspect(int *argc, lcmaps_argument_t **argv)
 {
-  char *logstr = "\tlcmaps_plugins_glexec_tracking-plugin_introspect()";
   static lcmaps_argument_t argList[] = {
     {NULL        ,  NULL    , -1, NULL}
   };
 
-  lcmaps_log_debug(2, "%s: introspecting\n", logstr);
-
   *argv = argList;
   *argc = lcmaps_cntArgs(argList);
-  lcmaps_log_debug(1, "%s: address first argument: 0x%x\n", logstr, argList);
-
-  lcmaps_log_debug(1, "%s: Introspect succeeded\n", logstr);
 
   return LCMAPS_MOD_SUCCESS;
 }
@@ -228,18 +222,18 @@ int plugin_run(int argc, lcmaps_argument_t *argv)
   uid_t * uid_array;
   uid_array = (uid_t *)getCredentialData(UID, &uid_count);
   if (uid_count != 1) {
-    lcmaps_log(0, "%s: No UID set yet; must map to a UID before running the glexec_tracking module.\n", logstr);
-    goto glexec_uid_failure;
+    lcmaps_log(0, "%s: No UID set yet; must map to a UID before running the process tracking module.\n", logstr);
+    goto process_tracking_uid_failure;
   }
   uid = uid_array[0];
 
   if (pipe(p2c) == -1) {
     lcmaps_log(0, "%s: Pipe creation failure (%d: %s)\n", errno, strerror(errno));
-    goto glexec_pipe_failure;
+    goto process_tracking_pipe_failure;
   }
   if (pipe(c2p) == -1) {
     lcmaps_log(0, "%s: Pipe creation failure (%d: %s)\n", errno, strerror(errno));
-    goto glexec_pipe_failure;
+    goto process_tracking_pipe_failure;
   }
 
   my_pid = getpid();
@@ -247,7 +241,7 @@ int plugin_run(int argc, lcmaps_argument_t *argv)
   pid = fork();
   if (pid == -1) {
     lcmaps_log(0, "%s: Fork failure (%d: %s)\n", errno, strerror(errno));
-    goto glexec_fork_failure;
+    goto process_tracking_fork_failure;
   } else if (pid == 0) {
     handle_child(p2c, c2p, my_pid);
   }
@@ -267,27 +261,27 @@ int plugin_run(int argc, lcmaps_argument_t *argv)
 
   if (rc < 0) {
      lcmaps_log (0, "Error: failure reading from the monitor process. %d.\n", rc);
-     goto glexec_child_failure;
+     goto process_tracking_child_failure;
   }
   if (ok != 0) {
      lcmaps_log (0, "Error: failure in configuring monitor process. %d.\n", ok);
-     goto glexec_child_failure;
+     goto process_tracking_child_failure;
   }
 
-  lcmaps_log(0, "%s: glexec_tracking plugin succeeded\n", logstr);
+  lcmaps_log(0, "%s: monitor process successfully launched\n", logstr);
 
   return LCMAPS_MOD_SUCCESS;
 
 
-glexec_fork_failure:
+process_tracking_fork_failure:
   close(p2c[0]);
   close(p2c[1]);
   close(c2p[0]);
   close(c2p[1]);
-glexec_pipe_failure:
-glexec_uid_failure:
-glexec_child_failure:
-  lcmaps_log_time(0, "%s: glexec_tracking plugin failed\n", logstr);
+process_tracking_pipe_failure:
+process_tracking_uid_failure:
+process_tracking_child_failure:
+  lcmaps_log_time(0, "%s: monitor process launch failed\n", logstr);
 
   return LCMAPS_MOD_FAIL;
 }
