@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #include "lcmaps/lcmaps_modules.h"
 #include "lcmaps/lcmaps_cred_data.h"
@@ -259,13 +260,30 @@ int plugin_run(int argc, lcmaps_argument_t *argv)
     fclose(fh);
   }
 
+  // Child has exited, let's call waitpid and do status parsing.
+  int status, exit_code, result;
+  while (((result = waitpid(pid, &status, 0)) == -1) && (errno == EINTR)) {
+  }
+  if (result == -1) {
+    lcmaps_log (0, "%s: Error: unable to get status of glexec monitor child. %d %s.\n", logstr, errno, strerror(errno));
+    goto process_tracking_child_failure;
+  }
+  if (!WIFEXITED(status)) {
+    lcmaps_log (0, "%s: Error: glexec monitor child died with a non-exit status, %d.\n", logstr, status);
+    goto process_tracking_child_failure;
+  }
+  if ((exit_code = WEXITSTATUS(status))) {
+    lcmaps_log (0, "%s: Error: glexec monitor child with exit code %d.\n", logstr, exit_code);
+    goto process_tracking_child_failure;
+  }
+
   if (rc < 0) {
-     lcmaps_log (0, "Error: failure reading from the monitor process. %d.\n", rc);
-     goto process_tracking_child_failure;
+    lcmaps_log (0, "%s: Error: failure reading from the monitor process. %d.\n", logstr, rc);
+    goto process_tracking_child_failure;
   }
   if (ok != 0) {
-     lcmaps_log (0, "Error: failure in configuring monitor process. %d.\n", ok);
-     goto process_tracking_child_failure;
+    lcmaps_log (0, "%s: Error: failure in configuring monitor process. %d.\n", logstr, ok);
+    goto process_tracking_child_failure;
   }
 
   lcmaps_log(0, "%s: monitor process successfully launched\n", logstr);

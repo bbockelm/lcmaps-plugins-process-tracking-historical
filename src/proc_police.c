@@ -258,6 +258,8 @@ int message_loop(int sock) {
                         processExit(ev->event_data.exit.process_tgid);
                     }
                     break;
+                default:
+                    break; // Likely, the BPF isn't working correctly.
             }
         }
 

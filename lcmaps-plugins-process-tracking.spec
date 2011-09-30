@@ -1,6 +1,6 @@
 Summary: Process tracking plugin for the LCMAPS authorization framework
 Name: lcmaps-plugins-process-tracking
-Version: 0.0.4
+Version: 0.0.5
 Release: 1%{?dist}
 License: Public Domain
 Group: System Environment/Libraries
@@ -49,6 +49,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/modules/liblcmaps_process_tracking.so.0.0.0
 
 %changelog
+* Wed Sep 28 2011 Brian Bockelman <bbockelm@cse.unl.edu> - 0.0.5-1
+- Correctly call waitpid to avoid zombie.  A few code warning cleanups.
+
 * Fri Sep 23 2011 Brian Bockelman <bbockelm@cse.unl.edu> - 0.0.4-1
 - Initial build of the process tracking plugin.
 
