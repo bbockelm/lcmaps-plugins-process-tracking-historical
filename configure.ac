@@ -2,9 +2,12 @@
 AC_INIT(lcmaps-plugins-process-tracking,0.0.5,bbockelm@cse.unl.edu)
 AC_PREREQ(2.57)
 AM_INIT_AUTOMAKE([1.9 no-define foreign])
+AC_CONFIG_MACRO_DIR([m4])
 
 AC_PROG_LIBTOOL
 AC_PROG_CXX
+
+AX_CXX_HEADER_UNORDERED_MAP
 
 # Check LCMAPS location
 AC_LCMAPS_INTERFACE([basic])
@@ -24,6 +27,7 @@ AC_ARG_WITH([moduledir],
 	AC_SUBST([MODULEDIR], ['${libdir}/lcmaps'])
 ])
 
+AC_CONFIG_HEADERS([src/config.h])
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
 

@@ -1,7 +1,8 @@
 #!/bin/bash
 
 libtoolize --copy --force
-aclocal -I src
+aclocal -I project
 automake -acf
 autoconf
+autoheader
 

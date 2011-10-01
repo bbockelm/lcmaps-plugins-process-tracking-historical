@@ -4,8 +4,14 @@
 ##
 #######################################################################
 
+ACLOCAL_AMFLAGS = -I m4
+
+# no-write-strings is done because lcmaps_log uses "char *" instead
+# of "const char *", causing newer compilers to freak
 AM_CPPFLAGS = \
+        $(CXX0X_CFLAGS) \
         $(LCMAPS_CFLAGS) \
+        -Wno-write-strings \
         -I$(top_srcdir)/interface
 
 EXTRA_DIST = bootstrap lcmaps-plugins-process-tracking.spec

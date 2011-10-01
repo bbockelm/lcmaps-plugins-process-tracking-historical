@@ -1,12 +1,22 @@
 
+#include "config.h"
+
 #include <fcntl.h>
 #include <sys/types.h>
+
+#ifdef HAVE_UNORDERED_MAP
+#include <unordered_map>
+#include <unordered_set>
+#else
 #include <ext/hash_map>
 #include <ext/hash_set>
+#endif
+
 #include <list>
 #include <signal.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <string.h>
 
 extern "C" {
 #include "lcmaps/lcmaps_log.h"
@@ -15,15 +25,23 @@ extern "C" {
 
 #pragma GCC visibility push(hidden)
 
+#ifdef HAVE_UNORDERED_MAP
+typedef std::unordered_map<pid_t, std::list<pid_t>, std::hash<pid_t>, std::equal_to<pid_t> > PidListMap;
+typedef std::unordered_map<pid_t, pid_t, std::hash<pid_t>, std::equal_to<pid_t> > PidPidMap;
+typedef std::unordered_set<pid_t, std::hash<pid_t>, std::equal_to<pid_t> > PidSet;
+#else
+
 struct eqpid {
     bool operator()(const pid_t pid1, const pid_t pid2) const {
         return pid1 == pid2;
     }
 };
 
-typedef __gnu_cxx::hash_set<pid_t, __gnu_cxx::hash<pid_t>, eqpid> PidSet;
 typedef __gnu_cxx::hash_map<pid_t, std::list<pid_t>, __gnu_cxx::hash<pid_t>, eqpid> PidListMap;
 typedef __gnu_cxx::hash_map<pid_t, pid_t, __gnu_cxx::hash<pid_t>, eqpid> PidPidMap;
+typedef __gnu_cxx::hash_set<pid_t, __gnu_cxx::hash<pid_t>, eqpid> PidSet;
+#endif
+
 typedef std::list<pid_t> PidList;
 
 class ProcessTree {
