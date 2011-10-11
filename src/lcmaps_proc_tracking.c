@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/prctl.h>
 
 #include "lcmaps/lcmaps_modules.h"
 #include "lcmaps/lcmaps_cred_data.h"
@@ -65,12 +66,17 @@ int do_daemonize() {
     return 0;
 }
 
-int proc_police_main(pid_t pid) {
+#define PR_SET_NAME_MAX 16
+int proc_police_main(pid_t pid, pid_t parent_pid) {
     int result = 0;
 
     lcmaps_log(0, "%s: Process %d monitoring process %d\n", logstr, getpid(), pid);
+    char name[PR_SET_NAME_MAX];
+    if (snprintf(name, PR_SET_NAME_MAX, "tracking %d", pid) <= PR_SET_NAME_MAX) {
+        prctl(PR_SET_NAME, name, 0, 0, 0);
+     }
 
-    initialize(pid);
+    initialize(pid, parent_pid);
 
     // Create the netlink socket.
     int sock = create_socket();
@@ -119,7 +125,7 @@ cleanup:
     return result;
 }
 
-void handle_child(int p2c[], int c2p[], pid_t pid)
+void handle_child(int p2c[], int c2p[], pid_t pid, pid_t ppid)
 {
     // Close all file handles.
     //  Child Process
@@ -152,7 +158,7 @@ void handle_child(int p2c[], int c2p[], pid_t pid)
       exit(1);
     }
     
-    int result = proc_police_main(pid);
+    int result = proc_police_main(pid, ppid);
     exit(result);
 }
 
@@ -217,7 +223,7 @@ int plugin_run(int argc, lcmaps_argument_t *argv)
   int rc = 0, ok = 0;
   int uid_count;
   uid_t uid;
-  pid_t pid, my_pid;
+  pid_t pid, my_pid, ppid;
 
   uid_count = 0;
   uid_t * uid_array;
@@ -238,13 +244,14 @@ int plugin_run(int argc, lcmaps_argument_t *argv)
   }
 
   my_pid = getpid();
+  ppid   = getppid();
 
   pid = fork();
   if (pid == -1) {
     lcmaps_log(0, "%s: Fork failure (%d: %s)\n", errno, strerror(errno));
     goto process_tracking_fork_failure;
   } else if (pid == 0) {
-    handle_child(p2c, c2p, my_pid);
+    handle_child(p2c, c2p, my_pid, ppid);
   }
   close(p2c[0]);
   close(p2c[1]);

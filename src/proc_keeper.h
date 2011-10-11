@@ -12,7 +12,7 @@ extern "C" {
 
 int is_done();
 void finalize();
-int initialize(pid_t);
+int initialize(pid_t, pid_t);
 int processFork(pid_t, pid_t);
 int processExit(pid_t);
 

@@ -1,5 +1,5 @@
 
-AC_INIT(lcmaps-plugins-process-tracking,0.0.5,bbockelm@cse.unl.edu)
+AC_INIT(lcmaps-plugins-process-tracking,0.0.6,bbockelm@cse.unl.edu)
 AC_PREREQ(2.57)
 AM_INIT_AUTOMAKE([1.9 no-define foreign])
 AC_CONFIG_MACRO_DIR([m4])
