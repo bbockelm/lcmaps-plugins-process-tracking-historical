@@ -25,7 +25,10 @@
 #include "proc_police.h"
 #include "proc_keeper.h"
 
+// Various necessary strings
+#define PLUGIN_PROCESS_TRACKING_PATH "-path"
 char * logstr = "lcmaps-process-tracking";
+char * execname = "@datadir_resolved@/lcmaps-plugins-process-tracking/process-tracking";
 
 // Daemonize the process
 int do_daemonize() {
@@ -70,58 +73,20 @@ int do_daemonize() {
 int proc_police_main(pid_t pid, pid_t parent_pid) {
     int result = 0;
 
-    lcmaps_log(0, "%s: Process %d monitoring process %d\n", logstr, getpid(), pid);
-    char name[PR_SET_NAME_MAX];
-    if (snprintf(name, PR_SET_NAME_MAX, "tracking %d", pid) <= PR_SET_NAME_MAX) {
-        prctl(PR_SET_NAME, name, 0, 0, 0);
-     }
+    lcmaps_log(0, "%s: Launching %s.\n", logstr, execname);
 
-    initialize(pid, parent_pid);
-
-    // Create the netlink socket.
-    int sock = create_socket();
-    if (sock < 0) {
-        result = sock;
-        lcmaps_log(0, "%s: Unable to create socket.\n", logstr);
-        goto cleanup;
+    char pid_char[64], ppid_char[64];
+    if (snprintf(pid_char, 64, "%d", pid) >= 64) {
+        lcmaps_log(0, "%s: Invalid PID: %d.\n", logstr, pid);
+        return 1;
     }
-    lcmaps_log_debug(3, "%s: Created netlink socket (%d) for kernel communication.\n", logstr, sock);
-
-    // Create the filter for the socket
-    if ((result = create_filter(sock)) < 0) {
-        lcmaps_log(0, "%s: Unable to create filter.\n", logstr);
-        goto cleanup;
-    }
-    lcmaps_log_debug(3, "%s: Created netlink byte packet filter.\n", logstr);
-
-    // Subscribe our socket to the kernel feed.
-    if ((result = inform_kernel(sock, PROC_CN_MCAST_LISTEN)) < 0) {
-        lcmaps_log(0, "%s: Unable to subscribe to the kernel stream\n", logstr);
-        goto cleanup;
+    if (snprintf(ppid_char, 64, "%d", parent_pid) >= 64) {
+        lcmaps_log(0, "%s: Invalid parent PID: %d.\n", logstr, parent_pid);
+        return 1;
     }
 
-    lcmaps_log_debug(2, "%s: TRACKING %d\n", logstr, pid);
-    write(1, "0", 1);
-    close(1);
-    open("/dev/null", O_WRONLY);
-    close(0);
-    open("/dev/null", O_RDONLY);
+    execl(execname, "process-tracking", pid_char, ppid_char, NULL);
 
-    // Primary message loop
-    message_loop(sock);
-
-    // Shutdown
-    if ((result = inform_kernel(sock, PROC_CN_MCAST_IGNORE)) < 0) {
-        lcmaps_log(0, "%s: Unable to unsubscribe from the kernel stream.\n", logstr);
-        goto cleanup;
-    }
-
-cleanup:
-    finalize();
-    if (sock >= 0) {
-        close(sock);
-    }
-    lcmaps_log(0, "%s: Process %d (monitoring process %d) finished with code %d.\n", logstr, getpid(), pid, result);
     return result;
 }
 
@@ -174,6 +139,21 @@ Returns:
 ******************************************************************************/
 int plugin_initialize(int argc, char **argv)
 {
+
+  int idx;
+  // Notice that we start at 1, as argv[0] is the plugin name.
+  for (idx=1; idx<argc; argc++) {
+    lcmaps_log_debug(2, "%s: arg %d is %s\n", logstr, idx, argv[idx]);
+    if ((strncasecmp(argv[idx], PLUGIN_PROCESS_TRACKING_PATH, sizeof(PLUGIN_PROCESS_TRACKING_PATH)) == 0) && ((idx+1) < argc)) {
+      if ((argv[idx+1] != NULL) && (strlen(argv[idx+1]) > 0)) {
+        execname = strdup(argv[++idx]);
+        lcmaps_log_debug(2, "%s: %s has %s\n", logstr, PLUGIN_PROCESS_TRACKING_PATH, execname);
+      }
+    } else {
+      lcmaps_log(0, "%s: Invalid plugin option: %s\n", logstr, argv[idx]);
+      return LCMAPS_MOD_FAIL;
+    }
+  }
 
   return LCMAPS_MOD_SUCCESS;
 

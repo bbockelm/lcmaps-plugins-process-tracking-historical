@@ -18,8 +18,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
+#include <syslog.h>
 
-#include "lcmaps/lcmaps_log.h"
 #include "proc_keeper.h"
 
 int create_filter(int sock) {
@@ -90,7 +90,7 @@ int create_filter(int sock) {
     fprog.len = sizeof filter / sizeof filter[0];
 
     if (setsockopt (sock, SOL_SOCKET, SO_ATTACH_FILTER, &fprog, sizeof fprog) < 0) {
-        lcmaps_log(0, "Unable to attach filter program: %d %s\n", errno, strerror(errno));
+        syslog(LOG_ERR, "Unable to attach filter program: %d %s\n", errno, strerror(errno));
         return -errno;
     }
     return 0;
@@ -105,18 +105,18 @@ int create_socket() {
     int sock;
     sock = socket (PF_NETLINK, SOCK_DGRAM, NETLINK_CONNECTOR);
     if (sock == -1) {
-        lcmaps_log(0, "Unable to create a netlink socket: %d %s\n", errno, strerror(errno));
+        syslog(LOG_ERR, "Unable to create a netlink socket: %d %s\n", errno, strerror(errno));
         return -errno;
     }
 
     // Set O_CLOEXEC
     int flags;
     if ((flags = fcntl(sock, F_GETFL, 0)) < 0)  {
-        lcmaps_log(0, "Unable to get socket flags: %d %s\n", errno, strerror(errno));
+        syslog(LOG_ERR, "Unable to get socket flags: %d %s\n", errno, strerror(errno));
         return -errno;
     }
     if (fcntl(sock, F_SETFL, flags | FD_CLOEXEC)< 0) {
-        lcmaps_log(0, "Unable to manipulate socket flags: %d %s\n", errno, strerror(errno));
+        syslog(LOG_ERR, "Unable to manipulate socket flags: %d %s\n", errno, strerror(errno));
         return -errno;
     }
 
@@ -127,13 +127,13 @@ int create_socket() {
 
     int result = bind (sock, (struct sockaddr *)&addr, sizeof addr);
     if (result == -1) {
-        lcmaps_log(0, "Unable to bind netlink socket to kernel: %d %s\n", errno, strerror(errno));
+        syslog(LOG_ERR, "Unable to bind netlink socket to kernel: %d %s\n", errno, strerror(errno));
         return -errno;
     }
 
     unsigned int socket_size = 512*1024;
     if (setsockopt (sock, SOL_SOCKET, SO_RCVBUF, &socket_size, sizeof(int))) {
-        lcmaps_log(0, "Unable to increase socket buffer size: %d %s\n", errno, strerror(errno));
+        syslog(LOG_ERR, "Unable to increase socket buffer size: %d %s\n", errno, strerror(errno));
         return -errno;
     }
 
@@ -174,10 +174,10 @@ int inform_kernel(int sock, enum proc_cn_mcast_op op) {
     size_t full_size = iov[0].iov_len + iov[1].iov_len + iov[2].iov_len;
     if (writev (sock, iov, 3) != full_size) {
         if (errno) {
-            lcmaps_log(0, "Unable to subscribe to proc stream: %d %s\n", errno, strerror(errno));
+            syslog(LOG_ERR, "Unable to subscribe to proc stream: %d %s\n", errno, strerror(errno));
             return -errno;
         }
-        lcmaps_log(0, "Unable to write full subscription to kernel.");
+        syslog(LOG_ERR, "Unable to write full subscription to kernel.");
         return -1;
     }
 
@@ -212,12 +212,12 @@ int message_loop(int sock) {
 
         if (len == -1) {
             if (errno == ENOBUFS) {
-                lcmaps_log(0, "OVERFLOW (socket buffer overflow; likely fork bomb attack)");
+                syslog(LOG_ERR, "OVERFLOW (socket buffer overflow; likely fork bomb attack)");
             } else if (EAGAIN || EWOULDBLOCK) {
                 // is_done was true, and we don't have any messages in the queue.
                 break;
             } else {
-                lcmaps_log(1, "Recovering from recvmsg error: %s\n", strerror(errno));
+                syslog(LOG_ERR, "Recovering from recvmsg error: %s\n", strerror(errno));
             }
             continue;
         }
@@ -231,14 +231,14 @@ int message_loop(int sock) {
 
             if ((nlmsghdr->nlmsg_type == NLMSG_ERROR) 
                     || (nlmsghdr->nlmsg_type == NLMSG_NOOP)) {
-                lcmaps_log(1, "Ignoring message due to error.\n");
+                syslog(LOG_ERR, "Ignoring message due to error.\n");
                 continue;
             }
 
             struct cn_msg *cn_msg = NLMSG_DATA (nlmsghdr);
             if ((cn_msg->id.idx != CN_IDX_PROC)
                      || (cn_msg->id.val != CN_VAL_PROC)) {
-                lcmaps_log(0, "Impossible message! %d.%d\n", cn_msg->id.idx, cn_msg->id.val);
+                syslog(LOG_ERR, "Impossible message! %d.%d\n", cn_msg->id.idx, cn_msg->id.val);
                 return -1;
             }
 
@@ -248,13 +248,13 @@ int message_loop(int sock) {
 
                 case PROC_EVENT_FORK:
                     if (ev->event_data.fork.child_tgid == ev->event_data.fork.child_pid) {
-                        //lcmaps_log(3, "DFORK: %d -> %d\n", ev->event_data.fork.parent_tgid, ev->event_data.fork.child_tgid);
+                        //syslog(LOG_DEBUG, "DFORK: %d -> %d\n", ev->event_data.fork.parent_tgid, ev->event_data.fork.child_tgid);
                         processFork(ev->event_data.fork.parent_tgid, ev->event_data.fork.child_tgid);
                     }
                     break;
                 case PROC_EVENT_EXIT:
                     if (ev->event_data.exit.process_tgid == ev->event_data.exit.process_pid) {
-                        //lcmaps_log(3, "DEXIT: %d\n", ev->event_data.exit.process_tgid);
+                        //syslog(LOG_DEBUG, "DEXIT: %d\n", ev->event_data.exit.process_tgid);
                         processExit(ev->event_data.exit.process_tgid);
                     }
                     break;
