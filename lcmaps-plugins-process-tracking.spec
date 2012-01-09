@@ -1,7 +1,7 @@
 Summary: Process tracking plugin for the LCMAPS authorization framework
 Name: lcmaps-plugins-process-tracking
 Version: 0.1.0
-Release: 1%{?dist}
+Release: 2%{?dist}
 License: Public Domain
 Group: System Environment/Libraries
 # The tarball was created from Subversion using the following commands:
@@ -32,24 +32,22 @@ make %{?_smp_mflags}
 rm -rf $RPM_BUILD_ROOT
 
 make DESTDIR=$RPM_BUILD_ROOT install
-mv $RPM_BUILD_ROOT/%{_libdir}/lcmaps $RPM_BUILD_ROOT/%{_libdir}/modules
-ln -s liblcmaps_process_tracking.so $RPM_BUILD_ROOT/%{_libdir}/modules/liblcmaps_process_tracking.so.0
-ln -s liblcmaps_process_tracking.so.0 $RPM_BUILD_ROOT/%{_libdir}/modules/liblcmaps_process_tracking.so.0.0.0
-rm $RPM_BUILD_ROOT/%{_libdir}/modules/liblcmaps_process_tracking.la
-rm $RPM_BUILD_ROOT/%{_libdir}/modules/liblcmaps_process_tracking.a
+rm $RPM_BUILD_ROOT/%{_libdir}/lcmaps/liblcmaps_process_tracking.la
+rm $RPM_BUILD_ROOT/%{_libdir}/lcmaps/liblcmaps_process_tracking.a
+mv $RPM_BUILD_ROOT%{_libdir}/lcmaps/liblcmaps_process_tracking.so $RPM_BUILD_ROOT%{_libdir}/lcmaps/lcmaps_process_tracking.mod
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root,-)
-%{_libdir}/modules/lcmaps_process_tracking.mod
-%{_libdir}/modules/liblcmaps_process_tracking.so
-%{_libdir}/modules/liblcmaps_process_tracking.so.0
-%{_libdir}/modules/liblcmaps_process_tracking.so.0.0.0
+%{_libdir}/lcmaps/lcmaps_process_tracking.mod
 %{_datadir}/%{name}/process-tracking
 
 %changelog
+* Sun Jan 08 2012 Brian Bockelman <bbockelm@cse.unl.edu> - 0.1.0-2
+- Update to the new LCMAPS modules directory.
+
 * Sun Jan 08 2012 Brian Bockelman <bbockelm@cse.unl.edu> - 0.1.0-1
 - Factor process tracking into a separate executable.
 
