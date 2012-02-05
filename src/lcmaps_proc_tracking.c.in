@@ -201,18 +201,7 @@ int plugin_run(int argc, lcmaps_argument_t *argv)
   FILE *fh = NULL;
   int p2c[2], c2p[2];
   int rc = 0, ok = 0;
-  int uid_count;
-  uid_t uid;
   pid_t pid, my_pid, ppid;
-
-  uid_count = 0;
-  uid_t * uid_array;
-  uid_array = (uid_t *)getCredentialData(UID, &uid_count);
-  if (uid_count != 1) {
-    lcmaps_log(0, "%s: No UID set yet; must map to a UID before running the process tracking module.\n", logstr);
-    goto process_tracking_uid_failure;
-  }
-  uid = uid_array[0];
 
   if (pipe(p2c) == -1) {
     lcmaps_log(0, "%s: Pipe creation failure (%d: %s)\n", errno, strerror(errno));
@@ -284,7 +273,6 @@ process_tracking_fork_failure:
   close(c2p[0]);
   close(c2p[1]);
 process_tracking_pipe_failure:
-process_tracking_uid_failure:
 process_tracking_child_failure:
   lcmaps_log_time(0, "%s: monitor process launch failed\n", logstr);
 

@@ -4,7 +4,7 @@
 ##
 #######################################################################
 
-ACLOCAL_AMFLAGS = -I m4
+ACLOCAL_AMFLAGS = -I m4 -I src
 
 # no-write-strings is done because lcmaps_log uses "char *" instead
 # of "const char *", causing newer compilers to freak
