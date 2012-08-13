@@ -32,7 +32,7 @@
 // Various necessary strings
 #define PLUGIN_PROCESS_TRACKING_PATH "-path"
 static char * logstr = "lcmaps-process-tracking";
-static char * execname = "@datadir_resolved@/share/lcmaps-plugins-process-tracking/process-tracking";
+static char * execname = "@datadir_resolved@/lcmaps-plugins-process-tracking/process-tracking";
 
 // Check to see if the pool accounting is loaded and has setup an account for
 // us to use.  If so, the lcmaps_pool_accounts_fd will be set to the value of

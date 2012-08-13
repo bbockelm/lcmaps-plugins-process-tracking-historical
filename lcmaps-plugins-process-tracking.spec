@@ -1,6 +1,6 @@
 Summary: Process tracking plugin for the LCMAPS authorization framework
 Name: lcmaps-plugins-process-tracking
-Version: 0.1.1
+Version: 0.2
 Release: 1%{?dist}
 License: Public Domain
 Group: System Environment/Libraries
@@ -45,6 +45,9 @@ rm -rf $RPM_BUILD_ROOT
 %{_datadir}/%{name}/process-tracking
 
 %changelog
+* Mon Aug 13 2012 Brian Bockelman <bbockelm@cse.unl.edu> - 0.2-1
+- Integrate with the pool accounts package to provide solution for anonymous accounts.
+
 * Sun Feb 05 2012 Brian Bockelman <bbockelm@cse.unl.edu> - 0.1.1-1
 - Small bugfixes for RHEL6 platforms.
 
