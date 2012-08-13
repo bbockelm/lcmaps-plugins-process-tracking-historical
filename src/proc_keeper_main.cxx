@@ -158,11 +158,13 @@ int main(int argc, char *argv[]) {
     openlog("process-tracking", LOG_PID|LOG_PERROR, LOG_DAEMON);
 
     // Input parsing and sanitation
-    if (argc != 3) {
-        syslog(LOG_ERR, "Usage: process-tracking <pid> <ppid>\n");
+    if ((argc != 3) && (argc != 4)) {
+        syslog(LOG_ERR, "Usage: process-tracking <pid> <ppid> [<pool account filename>]\n");
         syslog(LOG_ERR, "Not enough arguments!\n");
         return 1;
     }
+    const char * pool_account_filename = (argc == 4) ? argv[3] : NULL;
+
     pid_t pid_max = get_max_pid();
     errno = 0;
     long pid = strtol(argv[1], NULL, 10);
@@ -191,15 +193,28 @@ int main(int argc, char *argv[]) {
     if (max_fd < 0) {
         return 1;
     }
-    // 0 and 1 are closed in proc_polic_main; 2 is closed in 
-    // lcmaps_proc_tracking.c's do_daemonize.
+    // 0 and 1 are closed in proc_polic_main;
     int idx;
     for (idx = 3; idx<=max_fd; idx++) {
         syslog(LOG_DEBUG, "Closing FD: %d\n", idx);
         close(idx); // Ignore exit.
     }
 
+    // If we are not using pool accounts, close 2.
+    if (!pool_account_filename) {
+      close(2);
+    }
+
     int rc = proc_police_main(pid, ppid);
+
+    // Cleanup lockfile if used.
+    if (pool_account_filename) {
+      syslog(LOG_DEBUG, "Removing pool account lockfile %s.\n", pool_account_filename);
+      if (unlink(pool_account_filename) == -1) {
+        syslog(LOG_ERR, "Unable to remove lockfile %s (errno=%d, %s).\n", pool_account_filename, errno, strerror(errno));
+      }
+      close(2);
+    }
 
     closelog();
 

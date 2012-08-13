@@ -31,6 +31,7 @@ liblcmaps_process_tracking_la_SOURCES = \
 	src/lcmaps_proc_tracking.c
 
 liblcmaps_process_tracking_la_LDFLAGS = -avoid-version
+liblcmaps_process_tracking_la_LIBADD = -ldl
 
 progdatadir = $(datadir)/lcmaps-plugins-process-tracking
 progdata_PROGRAMS = process-tracking

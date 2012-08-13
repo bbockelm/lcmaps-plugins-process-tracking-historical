@@ -9,14 +9,18 @@
                             Include header files
 ******************************************************************************/
 
+#include "config.h"
+
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/prctl.h>
+#include <dlfcn.h>
 
 #include "lcmaps/lcmaps_modules.h"
 #include "lcmaps/lcmaps_cred_data.h"
@@ -27,11 +31,42 @@
 
 // Various necessary strings
 #define PLUGIN_PROCESS_TRACKING_PATH "-path"
-char * logstr = "lcmaps-process-tracking";
-char * execname = "@datadir_resolved@/lcmaps-plugins-process-tracking/process-tracking";
+static char * logstr = "lcmaps-process-tracking";
+static char * execname = "@datadir_resolved@/lcmaps-plugins-process-tracking/process-tracking";
+
+// Check to see if the pool accounting is loaded and has setup an account for
+// us to use.  If so, the lcmaps_pool_accounts_fd will be set to the value of
+// an open file descriptor.
+// The daemonized process will need to keep the FD open to maintain the lock.
+// This prevents others from using the same account.
+// Returns the FD, or -1 if no such FD has been found.
+// 
+// If the FD is found, it sets lockfile to a string containing the lockfile.
+// If no FD has been found, it does not change the value of lockfile.
+// The callee DOES NOT own this memory and should not free it.
+//
+static int get_account(char ** lockfile)
+{
+    int *fd_ptr = (void *)dlsym(RTLD_DEFAULT, "lcmaps_pool_accounts_fd");
+    if (!fd_ptr) {
+        lcmaps_log(5, "%s: Missing symbol lcmaps_pool_accounts_fd; will disable pool accounts.\n", logstr);
+    }
+    char **lockfile_ptr_ptr = (void *)dlsym(RTLD_DEFAULT, "lcmaps_pool_accounts_lockfile");
+    if (!lockfile_ptr_ptr) {
+        lcmaps_log(5, "%s: Missing symbol lcmaps_pool_accounts_lockfile; will disable pool accounts.\n", logstr);
+    }
+    if (lockfile_ptr_ptr && (*lockfile_ptr_ptr) && (**lockfile_ptr_ptr!= '\0') && (strlen(*lockfile_ptr_ptr) <= PATH_MAX) && fd_ptr && (*fd_ptr >= 0))
+    {
+        lockfile = lockfile_ptr_ptr;
+        lcmaps_log(3, "%s: Found a pool account FD and lockfile %s; will " \
+            "attempt to use pool accounts.\n", logstr, *lockfile_ptr_ptr);
+        return *fd_ptr;
+    }
+    return -1;
+}
 
 // Daemonize the process
-int do_daemonize() {
+static int do_daemonize() {
 
     //  Setting the real and effective uid/gid to root.
     if (setreuid(0, 0) != 0) {
@@ -70,7 +105,7 @@ int do_daemonize() {
 }
 
 #define PR_SET_NAME_MAX 16
-int proc_police_main(pid_t pid, pid_t parent_pid) {
+static int proc_police_main(pid_t pid, pid_t parent_pid) {
     int result = 0;
 
     lcmaps_log(0, "%s: Launching %s.\n", logstr, execname);
@@ -85,12 +120,24 @@ int proc_police_main(pid_t pid, pid_t parent_pid) {
         return 1;
     }
 
-    execl(execname, "process-tracking", pid_char, ppid_char, NULL);
+    char * lockfile = NULL;
+    int fd = get_account(&lockfile);
+    if ((fd != -1) && lockfile) {
+      if (dup2(fd, 2) == -1) {
+        lcmaps_log(0, "%s: Failed to move lockfile %s FD to stderr: (errno=%d, %s)\n", logstr, lockfile, errno, strerror(errno));
+        return 1;
+      }
+      lcmaps_log(4, "%s: Launching process-tracking with lockfile %s.\n", logstr, lockfile);
+      execl(execname, "process-tracking", pid_char, ppid_char, lockfile, NULL);
+    } else {
+      lcmaps_log(4, "%s: Launching process-tracking without lockfile.\n", logstr);
+      execl(execname, "process-tracking", pid_char, ppid_char, NULL);
+    }
 
     return result;
 }
 
-void handle_child(int p2c[], int c2p[], pid_t pid, pid_t ppid)
+static void handle_child(int p2c[], int c2p[], pid_t pid, pid_t ppid)
 {
     // Close all file handles.
     //  Child Process
@@ -142,9 +189,9 @@ int plugin_initialize(int argc, char **argv)
 
   int idx;
   // Notice that we start at 1, as argv[0] is the plugin name.
-  for (idx=1; idx<argc; argc++) {
+  for (idx=1; idx<argc; idx++) {
     lcmaps_log_debug(2, "%s: arg %d is %s\n", logstr, idx, argv[idx]);
-    if ((strncasecmp(argv[idx], PLUGIN_PROCESS_TRACKING_PATH, sizeof(PLUGIN_PROCESS_TRACKING_PATH)) == 0) && ((idx+1) < argc)) {
+    if ((strncasecmp(argv[idx], PLUGIN_PROCESS_TRACKING_PATH, strlen(PLUGIN_PROCESS_TRACKING_PATH)) == 0) && ((idx+1) < argc)) {
       if ((argv[idx+1] != NULL) && (strlen(argv[idx+1]) > 0)) {
         execname = strdup(argv[++idx]);
         lcmaps_log_debug(2, "%s: %s has %s\n", logstr, PLUGIN_PROCESS_TRACKING_PATH, execname);
