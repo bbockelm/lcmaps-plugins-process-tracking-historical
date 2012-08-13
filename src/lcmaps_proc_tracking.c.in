@@ -32,37 +32,60 @@
 // Various necessary strings
 #define PLUGIN_PROCESS_TRACKING_PATH "-path"
 static char * logstr = "lcmaps-process-tracking";
-static char * execname = "@datadir_resolved@/lcmaps-plugins-process-tracking/process-tracking";
+static char * execname = "@datadir_resolved@/share/lcmaps-plugins-process-tracking/process-tracking";
 
 // Check to see if the pool accounting is loaded and has setup an account for
 // us to use.  If so, the lcmaps_pool_accounts_fd will be set to the value of
 // an open file descriptor.
 // The daemonized process will need to keep the FD open to maintain the lock.
 // This prevents others from using the same account.
-// Returns the FD, or -1 if no such FD has been found.
+// Returns 0 on success, -1 on failure.
 // 
-// If the FD is found, it sets lockfile to a string containing the lockfile.
-// If no FD has been found, it does not change the value of lockfile.
-// The callee DOES NOT own this memory and should not free it.
+// If the FD is found, it sets lockfile to a string containing the lockfile,
+// and sets the fd accordingly.
+// If the FD is not found, but the call has been successful, it changes fd
+// to -1.
 //
-static int get_account(char ** lockfile)
+// If no FD has been found, it does not change the value of lockfile.
+//
+// On success, if fd is set, the callee owns the lockfile memory and should 
+// 'free' it.
+//
+static int get_account(int *fd, char ** lockfile)
 {
-    int *fd_ptr = (void *)dlsym(RTLD_DEFAULT, "lcmaps_pool_accounts_fd");
-    if (!fd_ptr) {
-        lcmaps_log(5, "%s: Missing symbol lcmaps_pool_accounts_fd; will disable pool accounts.\n", logstr);
-    }
-    char **lockfile_ptr_ptr = (void *)dlsym(RTLD_DEFAULT, "lcmaps_pool_accounts_lockfile");
-    if (!lockfile_ptr_ptr) {
-        lcmaps_log(5, "%s: Missing symbol lcmaps_pool_accounts_lockfile; will disable pool accounts.\n", logstr);
-    }
-    if (lockfile_ptr_ptr && (*lockfile_ptr_ptr) && (**lockfile_ptr_ptr!= '\0') && (strlen(*lockfile_ptr_ptr) <= PATH_MAX) && fd_ptr && (*fd_ptr >= 0))
-    {
-        lockfile = lockfile_ptr_ptr;
-        lcmaps_log(3, "%s: Found a pool account FD and lockfile %s; will " \
-            "attempt to use pool accounts.\n", logstr, *lockfile_ptr_ptr);
-        return *fd_ptr;
-    }
+  int count = 0;
+  // Pull this data from the credential object.
+  char ** account_info_list = getCredentialData(POOL_INDEX, &count);
+  if (!account_info_list || !count) {
+    lcmaps_log(5, "%s: Missing pool account information; will not use pool accounts.\n", logstr);
+    *fd = -1;
+    return 0;
+  }
+  char * account_info = account_info_list[0];
+  int lockfile_fd;
+  char * account_lockfile;
+
+  // Parse the POOL_INDEX information.
+  if (sscanf(account_info, "%d:", &lockfile_fd) != 1) {
+    lcmaps_log(1, "%s: Incorrectly formatted account information (%s)!\n", logstr, account_info);
     return -1;
+  }
+
+  char * offset = strchr(account_info, ':');
+  if (offset == NULL) {
+    lcmaps_log(1, "%s: Incorrectly formatted account information (%s); missing ':' separator!\n", logstr, account_info);
+    return -1;
+  }
+  account_lockfile = offset+1;
+
+  // Everything is OK - return
+  *lockfile = strdup(account_lockfile);
+  if (*lockfile == NULL) {
+    lcmaps_log(0, "%s: Failed to allocate memory for lockfile name.\n", logstr);
+    return -1;
+  }
+  *fd = lockfile_fd;
+  return 0;
 }
 
 // Daemonize the process
@@ -121,7 +144,13 @@ static int proc_police_main(pid_t pid, pid_t parent_pid) {
     }
 
     char * lockfile = NULL;
-    int fd = get_account(&lockfile);
+    int fd;
+    if (get_account(&fd, &lockfile) == -1) {
+        lcmaps_log(0, "%s: Failed to lookup lockfile information.\n", logstr);
+        return 1;
+    } else {
+        lcmaps_log(5, "%s: Got account information from pool-accounts module.\n", logstr);
+    }
     if ((fd != -1) && lockfile) {
       if (dup2(fd, 2) == -1) {
         lcmaps_log(0, "%s: Failed to move lockfile %s FD to stderr: (errno=%d, %s)\n", logstr, lockfile, errno, strerror(errno));
@@ -132,6 +161,10 @@ static int proc_police_main(pid_t pid, pid_t parent_pid) {
     } else {
       lcmaps_log(4, "%s: Launching process-tracking without lockfile.\n", logstr);
       execl(execname, "process-tracking", pid_char, ppid_char, NULL);
+    }
+
+    if (lockfile) {
+        free(lockfile);
     }
 
     return result;
