@@ -221,14 +221,14 @@ int message_loop(int sock) {
         len = recvmsg (sock, &msghdr, is_done() ? MSG_DONTWAIT : 0);
 
         if (len == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            if (is_done() && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                // is_done was true, and we don't have any messages in the queue.
+                break;
+            } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 processUsage();
                 clock_gettime(CLOCK_MONOTONIC, &last_ts);
             } else if (errno == ENOBUFS) {
                 syslog(LOG_ERR, "OVERFLOW (socket buffer overflow; likely fork bomb attack)");
-            } else if (EAGAIN || EWOULDBLOCK) {
-                // is_done was true, and we don't have any messages in the queue.
-                break;
             } else {
                 syslog(LOG_ERR, "Recovering from recvmsg error: %s\n", strerror(errno));
             }
