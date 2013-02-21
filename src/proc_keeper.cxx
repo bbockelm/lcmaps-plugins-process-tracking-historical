@@ -18,6 +18,8 @@
 #include <errno.h>
 #include <string.h>
 #include <syslog.h>
+#include <string>
+#include <sstream>
 
 #include "proc_keeper.h"
 
@@ -26,6 +28,7 @@
 #ifdef HAVE_UNORDERED_MAP
 typedef std::unordered_map<pid_t, std::list<pid_t>, std::hash<pid_t>, std::equal_to<pid_t> > PidListMap;
 typedef std::unordered_map<pid_t, pid_t, std::hash<pid_t>, std::equal_to<pid_t> > PidPidMap;
+typedef std::unordered_map<pid_t, unsigned long, std::hash<pid_t>, std::equal_to<pid_t> > PidLUMap;
 typedef std::unordered_set<pid_t, std::hash<pid_t>, std::equal_to<pid_t> > PidSet;
 #else
 
@@ -37,10 +40,29 @@ struct eqpid {
 
 typedef __gnu_cxx::hash_map<pid_t, std::list<pid_t>, __gnu_cxx::hash<pid_t>, eqpid> PidListMap;
 typedef __gnu_cxx::hash_map<pid_t, pid_t, __gnu_cxx::hash<pid_t>, eqpid> PidPidMap;
+typedef __gnu_cxx::hash_map<pid_t, unsigned long, __gnu_cxx::hash<pid_t>, eqpid> PidLUMap;
 typedef __gnu_cxx::hash_set<pid_t, __gnu_cxx::hash<pid_t>, eqpid> PidSet;
 #endif
 
 typedef std::list<pid_t> PidList;
+
+void
+measure_cpu(pid_t pid, unsigned long &utime, unsigned long &stime) {
+    utime = 0;
+    stime = 0;
+    std::stringstream ss;
+    ss << "/proc/" << pid << "/stat";
+    FILE *file = fopen(ss.str().c_str(), "r");
+    if (!file) return;
+    unsigned long tmp_utime, tmp_stime;
+    int ret = fscanf(file, "%*d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %lu %lu",
+        &tmp_utime, &tmp_stime);
+    fclose(file);
+    if (ret == 2) {
+        utime = tmp_utime;
+        stime = tmp_stime;
+    }
+}
 
 class ProcessTree {
 
@@ -49,11 +71,17 @@ public:
         m_watched(watched),
         m_alt_watched(watched2),
         m_live_procs(1),
-        m_started_shooting(false)
-    {}
+        m_started_shooting(false),
+        m_dead_utime(0),
+        m_dead_stime(0)
+    {
+        syslog(LOG_NOTICE, "glexec.mon[%d:%d]: Started, target uid %d\n", getpid(), watched2, watched);
+    }
     int fork(pid_t, pid_t);
+    void usage();
     int exit(pid_t);
     int shoot_tree();
+    void get_usage(long unsigned &utime, long unsigned &stime);
     inline int is_done();
     inline pid_t get_pid() {return m_watched;}
 
@@ -66,6 +94,8 @@ private:
     unsigned int m_live_procs;
     bool m_started_shooting;
     inline int record_new(pid_t, pid_t);
+    PidLUMap m_utime, m_stime;
+    long unsigned m_dead_utime, m_dead_stime;
 };
 
 inline int ProcessTree::is_done() {
@@ -109,6 +139,54 @@ int ProcessTree::fork(pid_t parent_pid, pid_t child_pid) {
     return 0;
 }
 
+void ProcessTree::usage() {
+    PidPidMap::const_iterator it;
+    for (it = m_pid_reverse.begin(); it != m_pid_reverse.end(); ++it) {
+        pid_t pid = it->first;
+        long unsigned utime, stime;
+
+        measure_cpu(pid, utime, stime);
+
+        PidLUMap::const_iterator it2 = m_utime.find(pid);
+        if (it2 == m_utime.end()) {
+            m_utime[pid] = utime;
+        } else {
+            if (it2->second > utime) {
+                m_dead_utime += it2->second;
+                m_utime[pid] += utime;
+            } else {
+                m_utime[pid] = utime;
+            }
+        }
+        it2 = m_stime.find(pid);
+        if (it2 == m_stime.end()) {
+            m_stime[pid] = stime;
+        } else {
+            if (it2->second > stime) {
+                m_dead_stime += it2->second;
+                m_stime[pid] = stime;
+            } else {
+                m_stime[pid] = stime;
+            }
+        }
+    }
+}
+
+void ProcessTree::get_usage(unsigned long &utime, unsigned long &stime) {
+    utime = m_dead_utime;
+    stime = m_dead_stime;
+    PidLUMap::const_iterator it;
+    for (it = m_utime.begin(); it != m_utime.end(); ++it) {
+        utime += it->second;
+    }
+    for (it = m_stime.begin(); it != m_stime.end(); ++it) {
+        stime += it->second;
+    }
+    long hz = sysconf(_SC_CLK_TCK);
+    utime /= hz;
+    stime /= hz;
+}
+
 int ProcessTree::shoot_tree() {
     m_started_shooting = true;
 
@@ -127,6 +205,9 @@ int ProcessTree::shoot_tree() {
     if (body_count) {
         syslog(LOG_DEBUG, "Cleaned all processes associated with %d\n", m_watched);
     }
+    long unsigned utime, stime;
+    get_usage(utime, stime);
+    syslog(LOG_NOTICE, "glexec.mon[%d#%d]: Terminated, CPU user %lu system %lu", getpid(), m_alt_watched, utime, stime);
     return body_count;
 }
 
@@ -214,6 +295,10 @@ int processFork(pid_t parent_pid, pid_t child_pid) {
 
 int processExit(pid_t pid) {
     return gTree->exit(pid);
+}
+
+void processUsage() {
+    gTree->usage();
 }
 
 #pragma GCC visibility pop

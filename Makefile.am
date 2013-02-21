@@ -43,6 +43,8 @@ process_tracking_SOURCES = \
 	src/proc_police.c \
 	src/proc_police.h
 
+process_tracking_LDFLAGS = -lrt
+
 install-data-hook:
 	( \
 	cd $(DESTDIR)$(plugindir); \

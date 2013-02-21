@@ -1,4 +1,5 @@
 
+#include <time.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -205,13 +206,25 @@ int message_loop(int sock) {
 
     struct nlmsghdr *nlmsghdr;
 
+    // Periodically timeout the socket
+    struct timeval timeout;      
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
+    // Ignore the return code.  If we can't set the timeout, we just drop the CPU usage.
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+
+    struct timespec last_ts;
+    clock_gettime(CLOCK_MONOTONIC, &last_ts);
     while (1) {
 
         // If we think we are done, clear out the queued messages, then exit.
         len = recvmsg (sock, &msghdr, is_done() ? MSG_DONTWAIT : 0);
 
         if (len == -1) {
-            if (errno == ENOBUFS) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                processUsage();
+                clock_gettime(CLOCK_MONOTONIC, &last_ts);
+            } else if (errno == ENOBUFS) {
                 syslog(LOG_ERR, "OVERFLOW (socket buffer overflow; likely fork bomb attack)");
             } else if (EAGAIN || EWOULDBLOCK) {
                 // is_done was true, and we don't have any messages in the queue.
@@ -221,6 +234,16 @@ int message_loop(int sock) {
             }
             continue;
         }
+
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        int diff = (ts.tv_sec - last_ts.tv_sec) * 1000;
+        diff += (ts.tv_nsec - last_ts.tv_nsec) / 1e6;
+        if (diff >= 10*1000) {
+            processUsage();
+            clock_gettime(CLOCK_MONOTONIC, &last_ts);
+        }
+
         if (addr.nl_pid != 0) {
             continue;
         }
